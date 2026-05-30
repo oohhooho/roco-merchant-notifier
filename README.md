@@ -27,7 +27,7 @@
 本项目的数据源由 [Entropy-Increase-Team](https://github.com/Entropy-Increase-Team/) 提供。
 你需要前往该项目主页或相关社区，获取用于调用 WeGame 接口的 `ROCOM_API_KEY`。
 
-测试key：sk-ff14f964051a5c966564e29b5bd3a768
+测试key：sk-ff14f964051a5c966564e29b5bd3a768（已失效）
 
 项目主页：[Entropy-Increase-Team/astrbot_plugin_rocom](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom)
 
