@@ -25,18 +25,14 @@
 
 #### 2. 申请 API Key
 本项目的数据源由 [Entropy-Increase-Team](https://github.com/Entropy-Increase-Team/) 提供。
-你需要前往该项目主页或相关社区，获取用于调用 WeGame 接口的 `ROCOM_API_KEY`。
-
-测试key：sk-ff14f964051a5c966564e29b5bd3a768（已失效）
-
-项目主页：[Entropy-Increase-Team/astrbot_plugin_rocom](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom)
+[key申请点这里](https://rocom.shallow.ink/) (收费)
 
 #### 3. 配置 GitHub Secrets (核心步骤)
 进入你的 GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions`，点击 `New repository secret`，依次添加以下 **4 个环境变量**：
 
 | Secret 名称 | 必填 | 说明 | 获取方式 |
 | :--- | :---: | :--- | :--- |
-| `ROCOM_API_KEY` | ✅ | 游戏数据接口访问凭证 | [社区网关](https://github.com/Entropy-Increase-Team/astrbot_plugin_rocom)提供 |
+| `ROCOM_API_KEY` | ✅ | 游戏数据接口访问凭证 | [社区网关](https://rocom.shallow.ink/)提供（收费） |
 | `IMGBB_KEY` | ✅ | 图床上传 API Key | 注册 [ImgBB](https://api.imgbb.com/) 获取 |
 | `BARK_KEY` | 选填 | iOS 推送 Key | Bark App 内复制 |
 | `NOTIFYME_UUID` | 选填 | Android 推送 UUID | NotifyMe App 内获取 |
