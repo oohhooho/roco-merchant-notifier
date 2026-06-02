@@ -36,4 +36,5 @@ jobs:
           IMGBB_KEY: ${{ secrets.IMGBB_KEY }}
           NOTIFYME_UUID: ${{ secrets.NOTIFYME_UUID }}
           BARK_KEY: ${{ secrets.BARK_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python main.py

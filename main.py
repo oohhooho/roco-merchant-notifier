@@ -10,6 +10,7 @@ ROCOM_API_KEY = os.environ.get("ROCOM_API_KEY")
 IMGBB_KEY = os.environ.get("IMGBB_KEY")
 NOTIFYME_UUID = os.environ.get("NOTIFYME_UUID")
 BARK_KEY = os.environ.get("BARK_KEY")
+NTFY_TOPIC = os.environ.get("NTFY_TOPIC")
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
@@ -265,6 +266,24 @@ def push_all(title, body, markdown, image_url):
                 "title": title, "body": body, "group": "洛克王国", "image": image_url, "isArchive": 1
             }, timeout=10)
             print("✅ Bark 推送已发送")
+        except: pass
+
+    if NTFY_TOPIC:
+        try:
+            headers = {
+                "Title": title,
+                "Priority": "high",
+                "Tags": "shopping_cart",
+            }
+            if image_url:
+                headers["Attach"] = image_url
+            requests.post(
+                f"https://ntfy.sh/{NTFY_TOPIC}",
+                data=body.encode("utf-8"),
+                headers=headers,
+                timeout=10,
+            )
+            print("✅ ntfy 推送已发送")
         except: pass
 
 # ================= 5. 主入口 =================
