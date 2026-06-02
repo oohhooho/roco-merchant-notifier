@@ -37,4 +37,5 @@ jobs:
           NOTIFYME_UUID: ${{ secrets.NOTIFYME_UUID }}
           BARK_KEY: ${{ secrets.BARK_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
         run: python main.py

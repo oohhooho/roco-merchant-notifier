@@ -11,6 +11,7 @@ IMGBB_KEY = os.environ.get("IMGBB_KEY")
 NOTIFYME_UUID = os.environ.get("NOTIFYME_UUID")
 BARK_KEY = os.environ.get("BARK_KEY")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC")
+NTFY_SERVER = os.environ.get("NTFY_SERVER", "https://ntfy.sh")
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
@@ -277,14 +278,18 @@ def push_all(title, body, markdown, image_url):
             }
             if image_url:
                 headers["Attach"] = image_url
-            requests.post(
-                f"https://ntfy.sh/{NTFY_TOPIC}",
+            resp = requests.post(
+                f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}",
                 data=body.encode("utf-8"),
                 headers=headers,
                 timeout=10,
             )
-            print("✅ ntfy 推送已发送")
-        except: pass
+            if resp.status_code == 200:
+                print("✅ ntfy 推送已发送")
+            else:
+                print(f"❌ ntfy 推送失败: HTTP {resp.status_code} - {resp.text}")
+        except Exception as e:
+            print(f"❌ ntfy 推送异常: {e}")
 
 # ================= 5. 主入口 =================
 
