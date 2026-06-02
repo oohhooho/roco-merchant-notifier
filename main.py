@@ -322,14 +322,17 @@ def push_all(title, body, markdown, image_url):
     if WXPUSHER_TOKEN and WXPUSHER_UIDS:
         try:
             uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
-            content = markdown
             if image_url:
-                content = f"{markdown}\n\n![render]({image_url})"
+                content = f'<h3>🛒 商人刷新详情</h3><img src="{image_url}" style="max-width:100%;border-radius:8px;"/>'
+                content_type = 3
+            else:
+                content = markdown
+                content_type = 2
             resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
                 "appToken": WXPUSHER_TOKEN,
                 "content": content,
                 "summary": body,
-                "contentType": 2,
+                "contentType": content_type,
                 "uids": uids,
             }, timeout=10)
             json_data = resp.json()
