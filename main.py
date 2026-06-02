@@ -10,6 +10,7 @@ ROCOM_API_KEY = os.environ.get("ROCOM_API_KEY")
 IMGBB_KEY = os.environ.get("IMGBB_KEY")
 NOTIFYME_UUID = os.environ.get("NOTIFYME_UUID")
 BARK_KEY = os.environ.get("BARK_KEY")
+BARK_SERVER = os.environ.get("BARK_SERVER", "https://api.day.app")
 NTFY_TOPIC = os.environ.get("NTFY_TOPIC")
 NTFY_SERVER = os.environ.get("NTFY_SERVER", "https://ntfy.sh")
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
@@ -264,11 +265,16 @@ def push_all(title, body, markdown, image_url):
     
     if BARK_KEY:
         try:
-            requests.post(f"https://api.day.app/{BARK_KEY}", data={
+            resp = requests.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
                 "title": title, "body": body, "group": "洛克王国", "image": image_url, "isArchive": 1
             }, timeout=10)
-            print("✅ Bark 推送已发送")
-        except: pass
+            json_data = resp.json()
+            if json_data.get("code") == 200:
+                print("✅ Bark 推送已发送")
+            else:
+                print(f"❌ Bark 推送失败: {json_data.get('message')}")
+        except Exception as e:
+            print(f"❌ Bark 推送异常: {e}")
 
     if NTFY_TOPIC:
         try:
