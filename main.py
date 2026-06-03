@@ -248,104 +248,145 @@ async def upload_to_imgbb(image_path):
 
 # ================= 4. 推送分发 =================
 
-def push_all(title, body, markdown, image_url):
-    """执行双通道推送"""
-    if NOTIFYME_UUID:
-        payload = {
+MAX_RETRY = 2
+RETRY_INTERVAL = 300  # 5分钟
+
+def _push_notifyme(title, body, markdown, image_url):
+    if not NOTIFYME_UUID: return True  # 未配置视为跳过
+    payload = {
+        "data": {
+            "uuid": NOTIFYME_UUID, "ttl": 86400, "priority": "high",
             "data": {
-                "uuid": NOTIFYME_UUID, "ttl": 86400, "priority": "high",
-                "data": {
-                    "title": title, "body": body, "group": "洛克王国", "bigText": True, "record": 1,
-                    "markdown": f"{markdown}\n\n![render]({image_url})" if image_url else markdown
-                }
+                "title": title, "body": body, "group": "洛克王国", "bigText": True, "record": 1,
+                "markdown": f"{markdown}\n\n![render]({image_url})" if image_url else markdown
             }
         }
-        try:
-            requests.post(NOTIFYME_SERVER, json=payload, timeout=10)
-            print("✅ NotifyMe 推送已发送")
-        except: pass
-    
-    if BARK_KEY:
-        try:
-            resp = requests.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
-                "title": title, "body": body, "group": "洛克王国", "image": image_url, "isArchive": 1
-            }, timeout=10)
-            json_data = resp.json()
-            if json_data.get("code") == 200:
-                print("✅ Bark 推送已发送")
-            else:
-                print(f"❌ Bark 推送失败: {json_data.get('message')}")
-        except Exception as e:
-            print(f"❌ Bark 推送异常: {e}")
+    }
+    try:
+        requests.post(NOTIFYME_SERVER, json=payload, timeout=10)
+        print("✅ NotifyMe 推送已发送")
+        return True
+    except Exception as e:
+        print(f"❌ NotifyMe 推送异常: {e}")
+        return False
 
-    if NTFY_TOPIC:
-        try:
-            headers = {
-                "Title": title,
-                "Priority": "high",
-                "Tags": "shopping_cart",
-            }
-            if image_url:
-                headers["Attach"] = image_url
-            resp = requests.post(
-                f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}",
-                data=body.encode("utf-8"),
-                headers=headers,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                print("✅ ntfy 推送已发送")
-            else:
-                print(f"❌ ntfy 推送失败: HTTP {resp.status_code} - {resp.text}")
-        except Exception as e:
-            print(f"❌ ntfy 推送异常: {e}")
+def _push_bark(title, body, markdown, image_url):
+    if not BARK_KEY: return True
+    try:
+        resp = requests.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
+            "title": title, "body": body, "group": "洛克王国", "image": image_url, "isArchive": 1
+        }, timeout=10)
+        json_data = resp.json()
+        if json_data.get("code") == 200:
+            print("✅ Bark 推送已发送")
+            return True
+        else:
+            print(f"❌ Bark 推送失败: {json_data.get('message')}")
+            return False
+    except Exception as e:
+        print(f"❌ Bark 推送异常: {e}")
+        return False
 
-    if PUSHPLUS_TOKEN:
-        try:
+def _push_ntfy(title, body, markdown, image_url):
+    if not NTFY_TOPIC: return True
+    try:
+        headers = {"Title": title, "Priority": "high", "Tags": "shopping_cart"}
+        if image_url:
+            headers["Attach"] = image_url
+        resp = requests.post(
+            f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}",
+            data=body.encode("utf-8"), headers=headers, timeout=10,
+        )
+        if resp.status_code == 200:
+            print("✅ ntfy 推送已发送")
+            return True
+        else:
+            print(f"❌ ntfy 推送失败: HTTP {resp.status_code} - {resp.text}")
+            return False
+    except Exception as e:
+        print(f"❌ ntfy 推送异常: {e}")
+        return False
+
+def _push_pushplus(title, body, markdown, image_url):
+    if not PUSHPLUS_TOKEN: return True
+    try:
+        content = markdown
+        if image_url:
+            content = f"{markdown}\n\n![render]({image_url})"
+        resp = requests.post("https://www.pushplus.plus/send", json={
+            "token": PUSHPLUS_TOKEN, "title": title, "content": content, "template": "markdown",
+        }, timeout=10)
+        json_data = resp.json()
+        if json_data.get("code") == 200:
+            print("✅ PushPlus 推送已发送")
+            return True
+        else:
+            print(f"❌ PushPlus 推送失败: {json_data.get('msg')}")
+            return False
+    except Exception as e:
+        print(f"❌ PushPlus 推送异常: {e}")
+        return False
+
+def _push_wxpusher(title, body, markdown, image_url):
+    if not (WXPUSHER_TOKEN and WXPUSHER_UIDS): return True
+    try:
+        uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
+        if image_url:
+            content = f'<h3>🛒 商人刷新详情</h3><img src="{image_url}" style="max-width:100%;border-radius:8px;"/>'
+            content_type = 3
+        else:
             content = markdown
-            if image_url:
-                content = f"{markdown}\n\n![render]({image_url})"
-            resp = requests.post("https://www.pushplus.plus/send", json={
-                "token": PUSHPLUS_TOKEN,
-                "title": title,
-                "content": content,
-                "template": "markdown",
-            }, timeout=10)
-            json_data = resp.json()
-            if json_data.get("code") == 200:
-                print("✅ PushPlus 推送已发送")
-            else:
-                print(f"❌ PushPlus 推送失败: {json_data.get('msg')}")
-        except Exception as e:
-            print(f"❌ PushPlus 推送异常: {e}")
+            content_type = 2
+        resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
+            "appToken": WXPUSHER_TOKEN, "content": content, "summary": body,
+            "contentType": content_type, "uids": uids,
+        }, timeout=10)
+        json_data = resp.json()
+        if json_data.get("code") == 1000:
+            print("✅ WxPusher 推送已发送")
+            return True
+        else:
+            print(f"❌ WxPusher 推送失败: {json_data.get('msg')}")
+            return False
+    except Exception as e:
+        print(f"❌ WxPusher 推送异常: {e}")
+        return False
 
-    if WXPUSHER_TOKEN and WXPUSHER_UIDS:
-        try:
-            uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
-            if image_url:
-                content = f'<h3>🛒 商人刷新详情</h3><img src="{image_url}" style="max-width:100%;border-radius:8px;"/>'
-                content_type = 3
-            else:
-                content = markdown
-                content_type = 2
-            resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
-                "appToken": WXPUSHER_TOKEN,
-                "content": content,
-                "summary": body,
-                "contentType": content_type,
-                "uids": uids,
-            }, timeout=10)
-            json_data = resp.json()
-            if json_data.get("code") == 1000:
-                print("✅ WxPusher 推送已发送")
-            else:
-                print(f"❌ WxPusher 推送失败: {json_data.get('msg')}")
-        except Exception as e:
-            print(f"❌ WxPusher 推送异常: {e}")
+PUSH_CHANNELS = {
+    "NotifyMe": _push_notifyme,
+    "Bark": _push_bark,
+    "ntfy": _push_ntfy,
+    "PushPlus": _push_pushplus,
+    "WxPusher": _push_wxpusher,
+}
+
+def push_all(title, body, markdown, image_url):
+    """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
+    failed = set(PUSH_CHANNELS.keys())
+
+    for attempt in range(1, MAX_RETRY + 2):  # 首次 + 2次重试
+        if not failed:
+            break
+        if attempt > 1:
+            print(f"⏳ 第{attempt - 1}次重试，等待{RETRY_INTERVAL // 60}分钟...")
+            import time
+            time.sleep(RETRY_INTERVAL)
+
+        still_failed = set()
+        for name in failed:
+            success = PUSH_CHANNELS[name](title, body, markdown, image_url)
+            if not success:
+                still_failed.add(name)
+
+        failed = still_failed
+
+    if failed:
+        print(f"⚠️ 以下通道最终推送失败: {', '.join(failed)}")
 
 # ================= 5. 主入口 =================
 
-async def main():
+async def _fetch_data():
+    """请求游戏数据，返回 (raw_data, error)"""
     try:
         resp = requests.get(GAME_API_URL, headers={"X-API-Key": ROCOM_API_KEY}, timeout=30)
         resp.raise_for_status()
@@ -353,19 +394,48 @@ async def main():
         err = None if resp.json().get("code") == 0 else resp.json().get("message")
     except Exception as e:
         raw_data, err = None, f"请求异常: {e}"
-    
+    return raw_data, err
+
+async def _do_push(raw_data, image_url=None):
+    """处理数据并推送，返回是否有活跃商品"""
+    processed = process_data_for_template(raw_data)
+    if processed["product_count"] == 0:
+        return False
+
+    item_names = [p["name"] for p in processed["products"]]
+    push_body = f"当前售卖: {'、'.join(item_names)}" if item_names else "当前暂无商品"
+
+    if image_url is None:
+        local_img = await render_to_image(processed)
+        image_url = await upload_to_imgbb(local_img)
+
+    push_all("📢 远行商人已刷新", push_body, "### 🛒 商人刷新详情", image_url)
+    return True
+
+async def main():
+    raw_data, err = await _fetch_data()
+
     if err or not raw_data:
         push_all("⚠️ 监控异常", err or "无法获取数据", "无法获取数据", None)
         return
 
-    processed = process_data_for_template(raw_data)
-    item_names = [p["name"] for p in processed["products"]]
-    push_body = f"当前售卖: {'、'.join(item_names)}" if item_names else "当前暂无商品"
-    
-    local_img = await render_to_image(processed)
-    img_url = await upload_to_imgbb(local_img)
-    
-    push_all("📢 远行商人已刷新", push_body, "### 🛒 商人刷新详情", img_url)
+    # 首次推送
+    has_active = await _do_push(raw_data)
+
+    # 无活跃商品时，5分钟后重试
+    if not has_active:
+        for attempt in range(1, MAX_RETRY + 1):
+            print(f"⏳ 当前无活跃商品，{RETRY_INTERVAL // 60}分钟后重试（第{attempt}次）...")
+            await asyncio.sleep(RETRY_INTERVAL)
+            raw_data, err = await _fetch_data()
+            if err or not raw_data:
+                print(f"❌ 重试获取数据失败: {err}")
+                continue
+            has_active = await _do_push(raw_data)
+            if has_active:
+                break
+        if not has_active:
+            print("⚠️ 重试结束，仍无活跃商品")
 
 if __name__ == "__main__":
     asyncio.run(main())
