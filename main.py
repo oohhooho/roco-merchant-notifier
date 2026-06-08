@@ -1,4 +1,7 @@
 import os
+import hashlib
+import hmac
+import base64
 import requests
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -16,6 +19,9 @@ NTFY_SERVER = os.environ.get("NTFY_SERVER", "https://ntfy.sh")
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN")
 WXPUSHER_TOKEN = os.environ.get("WXPUSHER_TOKEN")
 WXPUSHER_UIDS = os.environ.get("WXPUSHER_UIDS", "")
+FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
+FEISHU_SECRET = os.environ.get("FEISHU_SECRET", "")  # 签名校验密钥
+FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋,黑晶琉璃")  # 逗号分隔，如: 精灵,稀有道具
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
@@ -360,9 +366,61 @@ PUSH_CHANNELS = {
     "WxPusher": _push_wxpusher,
 }
 
-def push_all(title, body, markdown, image_url):
+def _push_feishu(title, body, markdown, image_url, item_names):
+    """飞书推送：仅当商品名匹配关键词时才推送，支持签名校验"""
+    if not FEISHU_WEBHOOK: return True
+    keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
+    if not keywords:
+        print("⚠️ 飞书未配置 FEISHU_KEYWORDS，跳过推送")
+        return True
+    # 检测是否有商品名命中关键词
+    matched = [name for name in item_names for kw in keywords if kw in name]
+    if not matched:
+        print(f"⚠️ 飞书：无商品匹配关键词 {keywords}，跳过推送")
+        return True  # 无匹配不算失败
+
+    try:
+        content_lines = [{"tag": "text", "text": f"{title}\n{body}"}]
+        if image_url:
+            content_lines.append({"tag": "a", "text": " 查看详情图", "href": image_url})
+
+        payload = {
+            "msg_type": "post",
+            "content": {
+                "post": {
+                    "zh_cn": {
+                        "title": f"🔔 {title}（匹配: {'、'.join(matched)}）",
+                        "content": [content_lines]
+                    }
+                }
+            }
+        }
+
+        # 签名校验
+        url = FEISHU_WEBHOOK
+        if FEISHU_SECRET:
+            timestamp = str(int(datetime.now().timestamp()))
+            string_to_sign = f"{timestamp}\n{FEISHU_SECRET}"
+            hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+            sign = base64.b64encode(hmac_code).decode("utf-8")
+            url = f"{url}&timestamp={timestamp}&sign={sign}"
+
+        resp = requests.post(url, json=payload, timeout=10)
+        json_data = resp.json()
+        if json_data.get("StatusCode") == 0 or json_data.get("code") == 0:
+            print(f"✅ 飞书推送已发送（匹配商品: {'、'.join(matched)}）")
+            return True
+        else:
+            print(f"❌ 飞书推送失败: {json_data.get('msg') or json_data}")
+            return False
+    except Exception as e:
+        print(f"❌ 飞书推送异常: {e}")
+        return False
+
+def push_all(title, body, markdown, image_url, item_names=None):
     """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
-    failed = set(PUSH_CHANNELS.keys())
+    item_names = item_names or []
+    failed = set(PUSH_CHANNELS.keys()) | {"Feishu"}
 
     for attempt in range(1, MAX_RETRY + 2):  # 首次 + 2次重试
         if not failed:
@@ -374,7 +432,10 @@ def push_all(title, body, markdown, image_url):
 
         still_failed = set()
         for name in failed:
-            success = PUSH_CHANNELS[name](title, body, markdown, image_url)
+            if name == "Feishu":
+                success = _push_feishu(title, body, markdown, image_url, item_names)
+            else:
+                success = PUSH_CHANNELS[name](title, body, markdown, image_url)
             if not success:
                 still_failed.add(name)
 
@@ -409,14 +470,14 @@ async def _do_push(raw_data, image_url=None):
         local_img = await render_to_image(processed)
         image_url = await upload_to_imgbb(local_img)
 
-    push_all("📢 远行商人已刷新", push_body, "### 🛒 商人刷新详情", image_url)
+    push_all("📢 远行商人已刷新", push_body, "### 🛒 商人刷新详情", image_url, item_names)
     return True
 
 async def main():
     raw_data, err = await _fetch_data()
 
     if err or not raw_data:
-        push_all("⚠️ 监控异常", err or "无法获取数据", "无法获取数据", None)
+        push_all("⚠️ 监控异常", err or "无法获取数据", "无法获取数据", None, [])
         return
 
     # 首次推送
