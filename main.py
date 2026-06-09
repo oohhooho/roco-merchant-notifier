@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import base64
 import requests
+from urllib.parse import quote
 import asyncio
 from datetime import datetime, timedelta, timezone
 from jinja2 import Environment, FileSystemLoader
@@ -21,7 +22,7 @@ WXPUSHER_TOKEN = os.environ.get("WXPUSHER_TOKEN")
 WXPUSHER_UIDS = os.environ.get("WXPUSHER_UIDS", "")
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 FEISHU_SECRET = os.environ.get("FEISHU_SECRET", "")  # 签名校验密钥
-FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋,黑晶琉璃,黄石榴石")  # 逗号分隔，如: 精灵,稀有道具
+FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋")  # 逗号分隔，如: 精灵,稀有道具
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
@@ -400,11 +401,14 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         # 签名校验
         url = FEISHU_WEBHOOK
         if FEISHU_SECRET:
-            timestamp = str(int(datetime.now().timestamp()))
-            string_to_sign = f"{timestamp}\n{FEISHU_SECRET}"
+            import time as _time
+            secret = FEISHU_SECRET.strip()
+            timestamp = str(int(_time.time()))
+            string_to_sign = f"{timestamp}\n{secret}"
             hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
             sign = base64.b64encode(hmac_code).decode("utf-8")
-            url = f"{url}?timestamp={timestamp}&sign={sign}"
+            print(f"🔍 飞书签名调试: timestamp={timestamp}, sign={sign}, secret_len={len(secret)}")
+            url = f"{url}?timestamp={timestamp}&sign={quote(sign, safe='')}"
 
         resp = requests.post(url, json=payload, timeout=10)
         json_data = resp.json()
@@ -412,7 +416,7 @@ def _push_feishu(title, body, markdown, image_url, item_names):
             print(f"✅ 飞书推送已发送（匹配商品: {'、'.join(matched)}）")
             return True
         else:
-            print(f"❌ 飞书推送失败: {json_data.get('msg') or json_data}")
+            print(f"❌ 飞书推送失败: {json_data.get('msg') or json_data}, 响应: {json_data}")
             return False
     except Exception as e:
         print(f"❌ 飞书推送异常: {e}")
@@ -422,7 +426,10 @@ def push_all(title, body, markdown, image_url, item_names=None):
     """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
     item_names = item_names or []
 
-    failed = set(PUSH_CHANNELS.keys()) | {"飞书"}
+    # 飞书单独推送（暂不参与重试）
+    _push_feishu(title, body, markdown, image_url, item_names)
+
+    failed = set(PUSH_CHANNELS.keys())
 
     for attempt in range(1, MAX_RETRY + 2):  # 首次 + 2次重试
         if not failed:
@@ -434,10 +441,7 @@ def push_all(title, body, markdown, image_url, item_names=None):
 
         still_failed = set()
         for name in failed:
-            if name == "飞书":
-                success = _push_feishu(title, body, markdown, image_url, item_names)
-            else:
-                success = PUSH_CHANNELS[name](title, body, markdown, image_url)
+            success = PUSH_CHANNELS[name](title, body, markdown, image_url)
             if not success:
                 still_failed.add(name)
 
