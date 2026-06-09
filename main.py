@@ -402,7 +402,7 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         if FEISHU_SECRET:
             timestamp = str(int(datetime.now().timestamp()))
             string_to_sign = f"{timestamp}\n{FEISHU_SECRET}"
-            hmac_code = hmac.new(FEISHU_SECRET.encode("utf-8"), string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+            hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
             sign = base64.b64encode(hmac_code).decode("utf-8")
             url = f"{url}?timestamp={timestamp}&sign={sign}"
 
