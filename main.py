@@ -22,7 +22,7 @@ WXPUSHER_TOKEN = os.environ.get("WXPUSHER_TOKEN")
 WXPUSHER_UIDS = os.environ.get("WXPUSHER_UIDS", "")
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 FEISHU_SECRET = os.environ.get("FEISHU_SECRET", "")  # 签名校验密钥
-FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋,黑晶琉璃")  # 逗号分隔，如: 精灵,稀有道具
+FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋")  # 逗号分隔，如: 精灵,稀有道具
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
