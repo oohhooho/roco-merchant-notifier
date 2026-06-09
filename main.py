@@ -421,7 +421,11 @@ def _push_feishu(title, body, markdown, image_url, item_names):
 def push_all(title, body, markdown, image_url, item_names=None):
     """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
     item_names = item_names or []
-    failed = set(PUSH_CHANNELS.keys()) | {"Feishu"}
+
+    # 飞书单独推送（暂不参与重试）
+    _push_feishu(title, body, markdown, image_url, item_names)
+
+    failed = set(PUSH_CHANNELS.keys())
 
     for attempt in range(1, MAX_RETRY + 2):  # 首次 + 2次重试
         if not failed:
@@ -433,10 +437,7 @@ def push_all(title, body, markdown, image_url, item_names=None):
 
         still_failed = set()
         for name in failed:
-            if name == "Feishu":
-                success = _push_feishu(title, body, markdown, image_url, item_names)
-            else:
-                success = PUSH_CHANNELS[name](title, body, markdown, image_url)
+            success = PUSH_CHANNELS[name](title, body, markdown, image_url)
             if not success:
                 still_failed.add(name)
 
