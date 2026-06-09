@@ -380,7 +380,8 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         return True  # 无匹配不算失败
 
     try:
-        content_lines = [{"tag": "text", "text": f"{title}\n{body}"}]
+        matched_str = "、".join(matched)
+        content_lines = [{"tag": "text", "text": f"{title}\n{body}\n匹配商品: {matched_str}"}]
         if image_url:
             content_lines.append({"tag": "a", "text": " 查看详情图", "href": image_url})
 
@@ -401,9 +402,9 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         if FEISHU_SECRET:
             timestamp = str(int(datetime.now().timestamp()))
             string_to_sign = f"{timestamp}\n{FEISHU_SECRET}"
-            hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
+            hmac_code = hmac.new(FEISHU_SECRET.encode("utf-8"), string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
             sign = base64.b64encode(hmac_code).decode("utf-8")
-            url = f"{url}&timestamp={timestamp}&sign={sign}"
+            url = f"{url}?timestamp={timestamp}&sign={sign}"
 
         resp = requests.post(url, json=payload, timeout=10)
         json_data = resp.json()
