@@ -453,15 +453,30 @@ def push_all(title, body, markdown, image_url, item_names=None):
 # ================= 5. 主入口 =================
 
 async def _fetch_data():
-    """请求游戏数据，返回 (raw_data, error)"""
+    """请求游戏数据，返回 (raw_data, error, is_transient)
+
+    is_transient 为 True 表示属于网络/服务端瞬时错误（5xx、超时、SSL 握手、连接异常等），
+    调用方可在等待后重试；False 表示永久性错误（4xx、业务码非 0 等），重试无意义。
+    """
     try:
         resp = requests.get(GAME_API_URL, headers={"X-API-Key": ROCOM_API_KEY}, timeout=30)
         resp.raise_for_status()
-        raw_data = resp.json().get("data", {})
-        err = None if resp.json().get("code") == 0 else resp.json().get("message")
+        json_data = resp.json()
+        raw_data = json_data.get("data", {})
+        err = None if json_data.get("code") == 0 else json_data.get("message")
+        return raw_data, err, False
+    except requests.exceptions.HTTPError as e:
+        status = e.response.status_code if e.response is not None else 0
+        # 5xx（含 Cloudflare 520-526）、408 请求超时、429 限流 视为可重试
+        is_transient = status >= 500 or status in (408, 429)
+        return None, f"请求异常: {e}", is_transient
+    except (requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.SSLError,
+            requests.exceptions.ChunkedEncodingError) as e:
+        return None, f"请求异常: {e}", True
     except Exception as e:
-        raw_data, err = None, f"请求异常: {e}"
-    return raw_data, err
+        return None, f"请求异常: {e}", False
 
 async def _do_push(raw_data, image_url=None):
     """处理数据并推送，返回是否有活跃商品"""
@@ -480,7 +495,15 @@ async def _do_push(raw_data, image_url=None):
     return True
 
 async def main():
-    raw_data, err = await _fetch_data()
+    raw_data, err, is_transient = await _fetch_data()
+
+    # 瞬时错误（如 Cloudflare 525、超时、连接失败）等待后重试
+    fetch_attempt = 0
+    while (err or not raw_data) and is_transient and fetch_attempt < MAX_RETRY:
+        fetch_attempt += 1
+        print(f"⏳ 数据获取瞬时失败 [{err}]，{RETRY_INTERVAL // 60}分钟后重试（第{fetch_attempt}/{MAX_RETRY}次）...")
+        await asyncio.sleep(RETRY_INTERVAL)
+        raw_data, err, is_transient = await _fetch_data()
 
     if err or not raw_data:
         push_all("⚠️ 监控异常", err or "无法获取数据", "无法获取数据", None, [])
