@@ -334,18 +334,36 @@ def _push_pushplus(title, body, markdown, image_url):
         print(f"❌ PushPlus 推送异常: {e}")
         return False
 
-def _push_wxpusher(title, body, markdown, image_url):
+def _push_wxpusher(title, body, markdown, image_url, item_names=None):
     if not (WXPUSHER_TOKEN and WXPUSHER_UIDS): return True
     try:
         uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
+
+        # 复用 FEISHU_KEYWORDS 作为稀有道具关键词，命中则高亮提醒
+        item_names = item_names or []
+        keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
+        matched = [name for name in item_names if any(kw in name for kw in keywords)]
+        summary = f"⚠️ 稀有道具: {'、'.join(matched)}"[:99] if matched else body
+
         if image_url:
-            content = f'<h3>🛒 商人刷新详情</h3><img src="{image_url}" style="max-width:100%;border-radius:8px;"/>'
+            banner = (
+                f'<div style="background:#fff1f0;border-left:4px solid #ff4d4f;'
+                f'padding:10px 12px;margin-bottom:10px;border-radius:6px;'
+                f'color:#cf1322;font-weight:bold;font-size:15px;">'
+                f'⚠️ 稀有道具刷新：{"、".join(matched)}</div>'
+            ) if matched else ""
+            content = (
+                f'<h3>🛒 商人刷新详情</h3>'
+                f'{banner}'
+                f'<img src="{image_url}" style="max-width:100%;border-radius:8px;"/>'
+            )
             content_type = 3
         else:
-            content = markdown
+            banner = f"> ⚠️ **稀有道具刷新：{'、'.join(matched)}**\n\n" if matched else ""
+            content = f"{banner}{markdown}"
             content_type = 2
         resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
-            "appToken": WXPUSHER_TOKEN, "content": content, "summary": body,
+            "appToken": WXPUSHER_TOKEN, "content": content, "summary": summary,
             "contentType": content_type, "uids": uids,
         }, timeout=10)
         json_data = resp.json()
@@ -440,6 +458,8 @@ def push_all(title, body, markdown, image_url, item_names=None):
         for name in failed:
             if name == "飞书":
                 success = _push_feishu(title, body, markdown, image_url, item_names)
+            elif name == "WxPusher":
+                success = _push_wxpusher(title, body, markdown, image_url, item_names)
             else:
                 success = PUSH_CHANNELS[name](title, body, markdown, image_url)
             if not success:
