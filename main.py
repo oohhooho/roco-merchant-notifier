@@ -344,7 +344,7 @@ def _push_wxpusher(title, body, markdown, image_url, item_names=None):
         keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
         matched = [name for name in item_names if any(kw in name for kw in keywords)]
         if matched:
-            summary = f"🔔🔔🔔稀有道具:{'、'.join(matched)} |🛒 当前售卖:{'、'.join(item_names)}"[:99]
+            summary = f"🔔🔔🔔稀有道具:{'、'.join(matched)}   |   🛒 当前售卖:{'、'.join(item_names)}"[:99]
         else:
             summary = body
 
