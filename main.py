@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import hashlib
 import hmac
@@ -9,6 +10,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from jinja2 import Environment, FileSystemLoader
 from playwright.async_api import async_playwright
+
+sys.stdout.reconfigure(line_buffering=True)
 
 # ================= 1. 配置区域 =================
 ROCOM_API_KEY = os.environ.get("ROCOM_API_KEY")
@@ -260,7 +263,7 @@ async def upload_to_imgbb(image_path):
 MAX_RETRY = 2
 RETRY_INTERVAL = 300  # 5分钟
 
-def _push_notifyme(title, body, markdown, image_url):
+def _push_notifyme(title, body, markdown, image_url, item_names, matched):
     if not NOTIFYME_UUID: return True  # 未配置视为跳过
     payload = {
         "data": {
@@ -279,7 +282,7 @@ def _push_notifyme(title, body, markdown, image_url):
         print(f"❌ NotifyMe 推送异常: {e}")
         return False
 
-def _push_bark(title, body, markdown, image_url):
+def _push_bark(title, body, markdown, image_url, item_names, matched):
     if not BARK_KEY: return True
     try:
         resp = requests.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
@@ -296,7 +299,7 @@ def _push_bark(title, body, markdown, image_url):
         print(f"❌ Bark 推送异常: {e}")
         return False
 
-def _push_ntfy(title, body, markdown, image_url):
+def _push_ntfy(title, body, markdown, image_url, item_names, matched):
     if not NTFY_TOPIC: return True
     try:
         headers = {"Title": title, "Priority": "high", "Tags": "shopping_cart"}
@@ -316,7 +319,7 @@ def _push_ntfy(title, body, markdown, image_url):
         print(f"❌ ntfy 推送异常: {e}")
         return False
 
-def _push_pushplus(title, body, markdown, image_url):
+def _push_pushplus(title, body, markdown, image_url, item_names, matched):
     if not PUSHPLUS_TOKEN: return True
     try:
         content = markdown
@@ -336,7 +339,7 @@ def _push_pushplus(title, body, markdown, image_url):
         print(f"❌ PushPlus 推送异常: {e}")
         return False
 
-def _push_wxpusher(title, body, markdown, image_url, item_names=None, matched=None):
+def _push_wxpusher(title, body, markdown, image_url, item_names, matched):
     if not (WXPUSHER_TOKEN and WXPUSHER_UIDS): return True
     try:
         uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
@@ -386,6 +389,7 @@ PUSH_CHANNELS = {
     "ntfy": _push_ntfy,
     "PushPlus": _push_pushplus,
     "WxPusher": _push_wxpusher,
+    "飞书": None,  # 占位，下方定义后赋值
 }
 
 def _push_feishu(title, body, markdown, image_url, item_names, matched):
@@ -439,12 +443,14 @@ def _push_feishu(title, body, markdown, image_url, item_names, matched):
         print(f"❌ 飞书推送异常: {e}")
         return False
 
+PUSH_CHANNELS["飞书"] = _push_feishu
+
 def push_all(title, body, markdown, image_url, item_names=None):
     """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
     item_names = item_names or []
     matched = [name for name in item_names if any(kw in name for kw in KEYWORDS)]
 
-    failed = set(PUSH_CHANNELS.keys()) | {"飞书"}
+    failed = set(PUSH_CHANNELS.keys())
 
     for attempt in range(1, MAX_RETRY + 2):  # 首次 + 2次重试
         if not failed:
@@ -455,12 +461,7 @@ def push_all(title, body, markdown, image_url, item_names=None):
 
         still_failed = set()
         for name in failed:
-            if name == "飞书":
-                success = _push_feishu(title, body, markdown, image_url, item_names, matched)
-            elif name == "WxPusher":
-                success = _push_wxpusher(title, body, markdown, image_url, item_names, matched)
-            else:
-                success = PUSH_CHANNELS[name](title, body, markdown, image_url)
+            success = PUSH_CHANNELS[name](title, body, markdown, image_url, item_names, matched)
             if not success:
                 still_failed.add(name)
 
