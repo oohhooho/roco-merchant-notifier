@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import base64
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from urllib.parse import quote
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -246,7 +248,7 @@ async def upload_to_imgbb(image_path):
     if not image_path or not IMGBB_KEY: return None
     try:
         with open(image_path, "rb") as f:
-            res = requests.post("https://api.imgbb.com/1/upload", data={"key": IMGBB_KEY}, files={"image": f}, timeout=30)
+            res = SESSION.post("https://api.imgbb.com/1/upload", data={"key": IMGBB_KEY}, files={"image": f}, timeout=30)
             json_data = res.json()
             if json_data.get("status") == 200:
                 print("✅ 图床上传成功")
@@ -261,7 +263,31 @@ async def upload_to_imgbb(image_path):
 # ================= 4. 推送分发 =================
 
 MAX_RETRY = 2
-RETRY_INTERVAL = 300  # 5分钟
+RETRY_BACKOFF = [60, 180]  # 重试间隔(秒)：第1次重试等60s，第2次等180s
+
+def _retry_wait(attempt):
+    """attempt 为 1 起的重试序号，超出序列长度时复用末位"""
+    return RETRY_BACKOFF[min(attempt - 1, len(RETRY_BACKOFF) - 1)]
+
+def _fmt_wait(seconds):
+    return f"{seconds // 60}分钟" if seconds >= 60 else f"{seconds}秒"
+
+def _build_session():
+    """HTTP 层自动重试：5xx/408/429/Cloudflare 520-526 与连接异常按指数退避重试"""
+    retry = Retry(
+        total=3,
+        backoff_factor=1,  # 重试间隔: 1s, 2s, 4s
+        status_forcelist=[408, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526],
+        allowed_methods=["GET", "POST"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    s = requests.Session()
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    return s
+
+SESSION = _build_session()
 
 def _push_notifyme(title, body, markdown, image_url, item_names, matched):
     if not NOTIFYME_UUID: return True  # 未配置视为跳过
@@ -275,7 +301,7 @@ def _push_notifyme(title, body, markdown, image_url, item_names, matched):
         }
     }
     try:
-        requests.post(NOTIFYME_SERVER, json=payload, timeout=10)
+        SESSION.post(NOTIFYME_SERVER, json=payload, timeout=10)
         print("✅ NotifyMe 推送已发送")
         return True
     except Exception as e:
@@ -285,7 +311,7 @@ def _push_notifyme(title, body, markdown, image_url, item_names, matched):
 def _push_bark(title, body, markdown, image_url, item_names, matched):
     if not BARK_KEY: return True
     try:
-        resp = requests.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
+        resp = SESSION.post(f"{BARK_SERVER.rstrip('/')}/{BARK_KEY}", data={
             "title": title, "body": body, "group": "洛克王国", "image": image_url, "isArchive": 1
         }, timeout=10)
         json_data = resp.json()
@@ -305,7 +331,7 @@ def _push_ntfy(title, body, markdown, image_url, item_names, matched):
         headers = {"Title": title, "Priority": "high", "Tags": "shopping_cart"}
         if image_url:
             headers["Attach"] = image_url
-        resp = requests.post(
+        resp = SESSION.post(
             f"{NTFY_SERVER.rstrip('/')}/{NTFY_TOPIC}",
             data=body.encode("utf-8"), headers=headers, timeout=10,
         )
@@ -325,7 +351,7 @@ def _push_pushplus(title, body, markdown, image_url, item_names, matched):
         content = markdown
         if image_url:
             content = f"{markdown}\n\n![render]({image_url})"
-        resp = requests.post("https://www.pushplus.plus/send", json={
+        resp = SESSION.post("https://www.pushplus.plus/send", json={
             "token": PUSHPLUS_TOKEN, "title": title, "content": content, "template": "markdown",
         }, timeout=10)
         json_data = resp.json()
@@ -368,7 +394,7 @@ def _push_wxpusher(title, body, markdown, image_url, item_names, matched):
             banner = f"> 🔔🔔🔔 **稀有道具刷新：{'、'.join(matched)}**\n\n" if matched else ""
             content = f"{banner}{markdown}"
             content_type = 2
-        resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
+        resp = SESSION.post("https://wxpusher.zjiecode.com/api/send/message", json={
             "appToken": WXPUSHER_TOKEN, "content": content, "summary": summary,
             "contentType": content_type, "uids": uids,
         }, timeout=10)
@@ -431,7 +457,7 @@ def _push_feishu(title, body, markdown, image_url, item_names, matched):
             print(f"🔍 飞书签名调试: timestamp={timestamp}, sign={sign}, secret_len={len(secret)}")
             url = f"{url}?timestamp={timestamp}&sign={quote(sign, safe='')}"
 
-        resp = requests.post(url, json=payload, timeout=10)
+        resp = SESSION.post(url, json=payload, timeout=10)
         json_data = resp.json()
         if json_data.get("StatusCode") == 0 or json_data.get("code") == 0:
             print(f"✅ 飞书推送已发送（匹配商品: {matched_str}）")
@@ -456,8 +482,9 @@ def push_all(title, body, markdown, image_url, item_names=None):
         if not failed:
             break
         if attempt > 1:
-            print(f"⏳ 第{attempt - 1}次重试，等待{RETRY_INTERVAL // 60}分钟...")
-            time.sleep(RETRY_INTERVAL)
+            wait = _retry_wait(attempt - 1)
+            print(f"⏳ 第{attempt - 1}次重试，等待{_fmt_wait(wait)}...")
+            time.sleep(wait)
 
         still_failed = set()
         for name in failed:
@@ -479,7 +506,7 @@ async def _fetch_data():
     调用方可在等待后重试；False 表示永久性错误（4xx、业务码非 0 等），重试无意义。
     """
     try:
-        resp = requests.get(GAME_API_URL, headers={"X-API-Key": ROCOM_API_KEY}, timeout=30)
+        resp = SESSION.get(GAME_API_URL, headers={"X-API-Key": ROCOM_API_KEY}, timeout=30)
         resp.raise_for_status()
         json_data = resp.json()
         raw_data = json_data.get("data", {})
@@ -521,8 +548,9 @@ async def main():
     fetch_attempt = 0
     while (err or not raw_data) and is_transient and fetch_attempt < MAX_RETRY:
         fetch_attempt += 1
-        print(f"⏳ 数据获取瞬时失败 [{err}]，{RETRY_INTERVAL // 60}分钟后重试（第{fetch_attempt}/{MAX_RETRY}次）...")
-        await asyncio.sleep(RETRY_INTERVAL)
+        wait = _retry_wait(fetch_attempt)
+        print(f"⏳ 数据获取瞬时失败 [{err}]，{_fmt_wait(wait)}后重试（第{fetch_attempt}/{MAX_RETRY}次）...")
+        await asyncio.sleep(wait)
         raw_data, err, is_transient = await _fetch_data()
 
     if err or not raw_data:
@@ -535,8 +563,9 @@ async def main():
     # 无活跃商品时，5分钟后重试
     if not has_active:
         for attempt in range(1, MAX_RETRY + 1):
-            print(f"⏳ 当前无活跃商品，{RETRY_INTERVAL // 60}分钟后重试（第{attempt}次）...")
-            await asyncio.sleep(RETRY_INTERVAL)
+            wait = _retry_wait(attempt)
+            print(f"⏳ 当前无活跃商品，{_fmt_wait(wait)}后重试（第{attempt}次）...")
+            await asyncio.sleep(wait)
             raw_data, err, _ = await _fetch_data()
             if err or not raw_data:
                 print(f"❌ 重试获取数据失败: {err}")
