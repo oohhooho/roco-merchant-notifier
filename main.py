@@ -1,4 +1,5 @@
 import os
+import time
 import hashlib
 import hmac
 import base64
@@ -23,6 +24,7 @@ WXPUSHER_UIDS = os.environ.get("WXPUSHER_UIDS", "")
 FEISHU_WEBHOOK = os.environ.get("FEISHU_WEBHOOK", "")
 FEISHU_SECRET = os.environ.get("FEISHU_SECRET", "")  # 签名校验密钥
 FEISHU_KEYWORDS = os.environ.get("FEISHU_KEYWORDS", "国王球,棱镜球,祝福项坠,炫彩精灵蛋")  # 逗号分隔，如: 精灵,稀有道具
+KEYWORDS = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
 
 GAME_API_URL = "https://wegame.shallow.ink/api/v1/games/rocom/merchant/info"
 NOTIFYME_SERVER = "https://notifyme-server.wzn556.top/api/send"
@@ -334,15 +336,13 @@ def _push_pushplus(title, body, markdown, image_url):
         print(f"❌ PushPlus 推送异常: {e}")
         return False
 
-def _push_wxpusher(title, body, markdown, image_url, item_names=None):
+def _push_wxpusher(title, body, markdown, image_url, item_names=None, matched=None):
     if not (WXPUSHER_TOKEN and WXPUSHER_UIDS): return True
     try:
         uids = [uid.strip() for uid in WXPUSHER_UIDS.split(",") if uid.strip()]
 
-        # 复用 FEISHU_KEYWORDS 作为稀有道具关键词，命中则高亮提醒
         item_names = item_names or []
-        keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
-        matched = [name for name in item_names if any(kw in name for kw in keywords)]
+        matched = matched or []
         if matched:
             summary = f"🔔🔔🔔稀有道具:{'、'.join(matched)}   |   🛒 当前售卖:{'、'.join(item_names)}"[:99]
         else:
@@ -388,17 +388,14 @@ PUSH_CHANNELS = {
     "WxPusher": _push_wxpusher,
 }
 
-def _push_feishu(title, body, markdown, image_url, item_names):
+def _push_feishu(title, body, markdown, image_url, item_names, matched):
     """飞书推送：仅当商品名匹配关键词时才推送，支持签名校验"""
     if not FEISHU_WEBHOOK: return True
-    keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
-    if not keywords:
+    if not KEYWORDS:
         print("⚠️ 飞书未配置 FEISHU_KEYWORDS，跳过推送")
         return True
-    # 检测是否有商品名命中关键词
-    matched = [name for name in item_names for kw in keywords if kw in name]
     if not matched:
-        print(f"⚠️ 飞书：无商品匹配关键词 {keywords}，跳过推送")
+        print(f"⚠️ 飞书：无商品匹配关键词 {KEYWORDS}，跳过推送")
         return True  # 无匹配不算失败
 
     try:
@@ -412,7 +409,7 @@ def _push_feishu(title, body, markdown, image_url, item_names):
             "content": {
                 "post": {
                     "zh_cn": {
-                        "title": f"🔔 {title}（匹配: {'、'.join(matched)}）",
+                        "title": f"🔔 {title}（匹配: {matched_str}）",
                         "content": [content_lines]
                     }
                 }
@@ -422,9 +419,8 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         # 签名校验
         url = FEISHU_WEBHOOK
         if FEISHU_SECRET:
-            import time as _time
             secret = FEISHU_SECRET.strip()
-            timestamp = str(int(_time.time()))
+            timestamp = str(int(time.time()))
             string_to_sign = f"{timestamp}\n{secret}"
             hmac_code = hmac.new(string_to_sign.encode("utf-8"), digestmod=hashlib.sha256).digest()
             sign = base64.b64encode(hmac_code).decode("utf-8")
@@ -434,7 +430,7 @@ def _push_feishu(title, body, markdown, image_url, item_names):
         resp = requests.post(url, json=payload, timeout=10)
         json_data = resp.json()
         if json_data.get("StatusCode") == 0 or json_data.get("code") == 0:
-            print(f"✅ 飞书推送已发送（匹配商品: {'、'.join(matched)}）")
+            print(f"✅ 飞书推送已发送（匹配商品: {matched_str}）")
             return True
         else:
             print(f"❌ 飞书推送失败: {json_data.get('msg') or json_data}, 响应: {json_data}")
@@ -446,6 +442,7 @@ def _push_feishu(title, body, markdown, image_url, item_names):
 def push_all(title, body, markdown, image_url, item_names=None):
     """执行全通道推送，失败通道5分钟后重试，最多重试2次"""
     item_names = item_names or []
+    matched = [name for name in item_names if any(kw in name for kw in KEYWORDS)]
 
     failed = set(PUSH_CHANNELS.keys()) | {"飞书"}
 
@@ -454,15 +451,14 @@ def push_all(title, body, markdown, image_url, item_names=None):
             break
         if attempt > 1:
             print(f"⏳ 第{attempt - 1}次重试，等待{RETRY_INTERVAL // 60}分钟...")
-            import time
             time.sleep(RETRY_INTERVAL)
 
         still_failed = set()
         for name in failed:
             if name == "飞书":
-                success = _push_feishu(title, body, markdown, image_url, item_names)
+                success = _push_feishu(title, body, markdown, image_url, item_names, matched)
             elif name == "WxPusher":
-                success = _push_wxpusher(title, body, markdown, image_url, item_names)
+                success = _push_wxpusher(title, body, markdown, image_url, item_names, matched)
             else:
                 success = PUSH_CHANNELS[name](title, body, markdown, image_url)
             if not success:
