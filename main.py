@@ -540,7 +540,7 @@ async def main():
         for attempt in range(1, MAX_RETRY + 1):
             print(f"⏳ 当前无活跃商品，{RETRY_INTERVAL // 60}分钟后重试（第{attempt}次）...")
             await asyncio.sleep(RETRY_INTERVAL)
-            raw_data, err = await _fetch_data()
+            raw_data, err, _ = await _fetch_data()
             if err or not raw_data:
                 print(f"❌ 重试获取数据失败: {err}")
                 continue
