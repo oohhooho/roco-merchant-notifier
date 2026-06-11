@@ -343,7 +343,10 @@ def _push_wxpusher(title, body, markdown, image_url, item_names=None):
         item_names = item_names or []
         keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
         matched = [name for name in item_names if any(kw in name for kw in keywords)]
-        summary = f"🔔🔔🔔 稀有道具: {'、'.join(matched)}"[:99] if matched else body
+        if matched:
+            summary = f"🔔🔔🔔稀有:{'、'.join(matched)} | 全部:{'、'.join(item_names)}"[:99]
+        else:
+            summary = body
 
         if image_url:
             banner = (
