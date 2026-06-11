@@ -343,14 +343,14 @@ def _push_wxpusher(title, body, markdown, image_url, item_names=None):
         item_names = item_names or []
         keywords = [k.strip() for k in FEISHU_KEYWORDS.split(",") if k.strip()]
         matched = [name for name in item_names if any(kw in name for kw in keywords)]
-        summary = f"⚠️ 稀有道具: {'、'.join(matched)}"[:99] if matched else body
+        summary = f"🔔🔔🔔 稀有道具: {'、'.join(matched)}"[:99] if matched else body
 
         if image_url:
             banner = (
                 f'<div style="background:#fff1f0;border-left:4px solid #ff4d4f;'
                 f'padding:10px 12px;margin-bottom:10px;border-radius:6px;'
                 f'color:#cf1322;font-weight:bold;font-size:15px;">'
-                f'⚠️ 稀有道具刷新：{"、".join(matched)}</div>'
+                f'🔔🔔🔔 稀有道具刷新：{"、".join(matched)}</div>'
             ) if matched else ""
             content = (
                 f'<h3>🛒 商人刷新详情</h3>'
@@ -359,7 +359,7 @@ def _push_wxpusher(title, body, markdown, image_url, item_names=None):
             )
             content_type = 3
         else:
-            banner = f"> ⚠️ **稀有道具刷新：{'、'.join(matched)}**\n\n" if matched else ""
+            banner = f"> 🔔🔔🔔 **稀有道具刷新：{'、'.join(matched)}**\n\n" if matched else ""
             content = f"{banner}{markdown}"
             content_type = 2
         resp = requests.post("https://wxpusher.zjiecode.com/api/send/message", json={
